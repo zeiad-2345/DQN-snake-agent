@@ -1,0 +1,12 @@
+{
+  "name": "snake-dqn-frontend",
+  "version": "1.0.0",
+  "description": "Frontend dashboard for Snake DQN Trainer",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}

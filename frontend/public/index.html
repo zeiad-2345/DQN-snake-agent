@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Snake DQN Trainer</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+  <!-- ══════════════════════════════════════
+       SCREEN 1 · Welcome / Config
+  ══════════════════════════════════════ -->
+  <div id="welcome-screen" class="screen active">
+    <div class="bg-grid"></div>
+
+    <div class="welcome-content">
+      <div class="brand">
+        <span class="brand-icon">⟨/⟩</span>
+        <span class="brand-label">SNAKE DQN</span>
+      </div>
+
+      <h1 class="welcome-title">
+        Deep Q-Network<br>
+        <span class="gradient-text">Snake Trainer</span>
+      </h1>
+
+      <p class="welcome-sub">
+        Configure a reinforcement learning agent and watch it master<br>
+        the classic Snake game in real-time using Double DQN.
+      </p>
+
+      <div class="config-card">
+        <div class="config-card-header">
+          <span class="config-card-title">Training Parameters</span>
+          <div class="badge-row">
+            <span class="badge">DQN</span>
+            <span class="badge">Experience Replay</span>
+            <span class="badge">Soft Update</span>
+          </div>
+        </div>
+
+        <form id="config-form">
+          <div class="param-grid">
+
+            <div class="param-group">
+              <div class="param-label-row">
+                <span class="param-sym">γ</span>
+                <div>
+                  <div class="param-name">Gamma</div>
+                  <div class="param-desc">Discount factor</div>
+                </div>
+              </div>
+              <div class="input-box">
+                <input type="number" id="gamma" value="0.995"
+                       step="0.001" min="0.01" max="0.999" />
+                <span class="input-unit">0 – 1</span>
+              </div>
+              <p class="param-hint">How much future rewards are valued over immediate ones</p>
+            </div>
+
+            <div class="param-group">
+              <div class="param-label-row">
+                <span class="param-sym">α</span>
+                <div>
+                  <div class="param-name">Learning Rate</div>
+                  <div class="param-desc">Adam optimizer step</div>
+                </div>
+              </div>
+              <div class="input-box">
+                <input type="number" id="alpha" value="0.001"
+                       step="0.0001" min="0.00001" max="0.1" />
+                <span class="input-unit">1e-5 – 0.1</span>
+              </div>
+              <p class="param-hint">Controls how fast the neural network weights are updated</p>
+            </div>
+
+            <div class="param-group">
+              <div class="param-label-row">
+                <span class="param-sym">N</span>
+                <div>
+                  <div class="param-name">Episodes</div>
+                  <div class="param-desc">Training duration</div>
+                </div>
+              </div>
+              <div class="input-box">
+                <input type="number" id="num_episodes" value="2000"
+                       step="100" min="100" max="10000" />
+                <span class="input-unit">100 – 10k</span>
+              </div>
+              <p class="param-hint">Total number of Snake games the agent will play during training</p>
+            </div>
+
+          </div><!-- /param-grid -->
+
+          <div id="connect-error" class="connect-error" style="display:none">
+            Cannot reach the Python backend at <code>localhost:5000</code>.
+            Run <code>python server.py</code> first.
+          </div>
+
+          <div class="form-footer">
+            <div class="arch-info">
+              <span class="arch-item">11-dim state</span>
+              <span class="arch-sep">·</span>
+              <span class="arch-item">64 → 64 → 3 actions</span>
+              <span class="arch-sep">·</span>
+              <span class="arch-item">ε-greedy exploration</span>
+              <span class="arch-sep">·</span>
+              <span class="arch-item">τ = 0.001 soft update</span>
+            </div>
+            <button type="submit" class="btn-start" id="start-btn">
+              <span class="btn-arrow">▶</span> Start Training
+            </button>
+          </div>
+        </form>
+      </div>
+    </div><!-- /welcome-content -->
+  </div><!-- /welcome-screen -->
+
+
+  <!-- ══════════════════════════════════════
+       SCREEN 2 · Training Dashboard
+  ══════════════════════════════════════ -->
+  <div id="training-screen" class="screen">
+
+    <!-- Header bar -->
+    <header class="dash-header">
+      <div class="dh-left">
+        <span class="dh-brand">⟨/⟩ Snake DQN</span>
+        <span class="dh-sep">|</span>
+        <span id="status-badge" class="status-badge running">
+          <span class="status-dot"></span>
+          <span id="status-text">Training</span>
+        </span>
+      </div>
+
+      <div class="dh-center">
+        <div class="hstat">
+          <span class="hstat-label">Episode</span>
+          <span class="hstat-value mono" id="h-episode">— / —</span>
+        </div>
+        <div class="hstat-divider"></div>
+        <div class="hstat">
+          <span class="hstat-label">Elapsed</span>
+          <span class="hstat-value mono" id="h-elapsed">0s</span>
+        </div>
+        <div class="hstat-divider"></div>
+        <div class="hstat">
+          <span class="hstat-label">ε (epsilon)</span>
+          <span class="hstat-value mono" id="h-epsilon">1.000</span>
+        </div>
+      </div>
+
+      <div class="dh-right">
+        <button id="stop-btn"  class="btn-stop">■ Stop</button>
+        <button id="back-btn"  class="btn-back">← New Run</button>
+      </div>
+    </header>
+
+    <!-- Main dashboard -->
+    <main class="dash-main">
+
+      <!-- Left: live game -->
+      <aside class="game-panel">
+        <div class="panel-label">Live Game</div>
+
+        <div class="canvas-wrap">
+          <canvas id="snake-canvas" width="400" height="400"></canvas>
+          <div id="canvas-overlay" class="canvas-overlay">
+            <div class="overlay-msg">Waiting for training…</div>
+          </div>
+        </div>
+
+        <div class="game-info-grid">
+          <div class="gi-card">
+            <span class="gi-label">Score</span>
+            <span class="gi-value green" id="gi-score">0</span>
+          </div>
+          <div class="gi-card">
+            <span class="gi-label">Episode</span>
+            <span class="gi-value" id="gi-episode">—</span>
+          </div>
+          <div class="gi-card">
+            <span class="gi-label">Ep. Reward</span>
+            <span class="gi-value" id="gi-reward">—</span>
+          </div>
+        </div>
+
+        <div class="speed-control">
+          <div class="speed-header">
+            <span class="speed-label">Playback Speed</span>
+            <span class="speed-val mono" id="speed-val">1.0x</span>
+          </div>
+          <div class="speed-row">
+            <span class="speed-tag">0.5x</span>
+            <input type="range" id="speed-slider" min="0.5" max="5" value="1" step="0.5" />
+            <span class="speed-tag">5x</span>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Right: metrics + charts -->
+      <section class="stats-panel">
+
+        <div class="metrics-row">
+          <div class="metric-card">
+            <div class="mc-top">
+              <span class="mc-icon cyan">◎</span>
+              <span class="mc-label">Avg Reward</span>
+            </div>
+            <div class="mc-value cyan mono" id="m-avg">—</div>
+            <div class="mc-sub">last 100 episodes</div>
+          </div>
+          <div class="metric-card">
+            <div class="mc-top">
+              <span class="mc-icon green">★</span>
+              <span class="mc-label">Best Score</span>
+            </div>
+            <div class="mc-value green mono" id="m-best">0</div>
+            <div class="mc-sub">max apples eaten</div>
+          </div>
+          <div class="metric-card">
+            <div class="mc-top">
+              <span class="mc-icon">↗</span>
+              <span class="mc-label">Progress</span>
+            </div>
+            <div class="mc-value mono" id="m-pct">0%</div>
+            <div class="mc-sub" id="m-pct-sub">0 / 0 episodes</div>
+          </div>
+        </div>
+
+        <div class="progress-track">
+          <div class="progress-fill" id="progress-fill" style="width:0%"></div>
+        </div>
+
+        <div class="charts-grid">
+          <div class="chart-card">
+            <div class="chart-card-header">
+              <span class="chart-card-title">Episode Reward</span>
+              <span class="chart-badge cyan mono" id="badge-reward">—</span>
+            </div>
+            <div class="chart-body">
+              <canvas id="reward-chart"></canvas>
+            </div>
+          </div>
+          <div class="chart-card">
+            <div class="chart-card-header">
+              <span class="chart-card-title">Moving Average (100 ep)</span>
+              <span class="chart-badge green mono" id="badge-avg">—</span>
+            </div>
+            <div class="chart-body">
+              <canvas id="avg-chart"></canvas>
+            </div>
+          </div>
+        </div>
+
+      </section>
+    </main>
+  </div><!-- /training-screen -->
+
+  <script src="app.js"></script>
+</body>
+</html>
